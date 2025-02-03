@@ -4,13 +4,12 @@
      18 - RC 2 - INT3
       2 - RC 5 - INT4
       3 - RC 6 - INT5
-     A0 - Battery Voltage Divider
   OUTPUT PINS:
       6 - Left Motor Speed - OC4A - PH3
       8 - Left Motor Direction - PH5
       7 - Right Motor Speed - OC4B - PH4
       9 - Right Motor Direction - PH6
-     23 - Low battery LED - PA1
+     22 - Walkie Talkie PTT - PA0
      
   RC Controller Settings:
     Mix Mode - B
@@ -47,10 +46,6 @@ float oL, oR; //OUTPUT Values -1000 -> 1000 -- 0 is stop
 void initMotors();    //Motor takes a PWM signal for magnitude       
                       //   and a boolean value for the direction
 
-/*void initADC(); //Voltage divider = 5V - R1 - A0 - R2 - 480V
-uint16_t batt; //10 bit ADC reading - R1=810k R2=270k
-#define LOW_BAT_VAL 608 // Call 11.9V low bat - 1023*(11.9*(R2/(R1+R2)))/5*/
-
 //get an expected relationship between pwm and rpm for calculations
 int16_t MAX_PWM; //Max output pwm
 #define PWM_UPPER 800 //Range for max pwm output
@@ -63,12 +58,11 @@ void setup() {
   TCCR5A = 0;           //normal port operations
   TCCR5B = (1<<CS51) | (1<<CS50);   //clk/64 prescaler
 
-  /*DDRA |= (1<<PA1); //Output for low battery led
-  PORTA &= ~(1<<PA1); */
+  DDRA = 0x00; //Set up PORTA to be input with no pullup resistors
+  PORTA = 0x00;
 
   initMotors();
   initRC();
-  //initADC();
 }
 
 void loop() {
@@ -132,19 +126,12 @@ void loop() {
     PORTH |= (1<<PH6); //Set right dir
   }  
 
-  /*
-  if (batt<LOW_BAT_VAL) //if battery below threshold
-    PORTA |= (1<<PA1); //turn on low battery indicator
-  */
-
-  /*  
   //read switch - rc5
   if (rc5 < 1250) //Top Position
+    DDRA &= ~(1<<PA0); //Release Button - Shove Recieving
+  else //Middle or Bottom Position
+    DDRA |= (1<<PA0); //Press Button - Shove Transmitting
 
-  else if (rc5 < 1750) //Middle Position
-
-  else //Bottom Position
-  */
 }
 
 //setup PWM for motors - OC4A and OC4B using PWM mode 14 - freqency = ~244Hz
@@ -187,28 +174,10 @@ ISR(INT3_vect) { //RC2
   rc2b[++rc2i<RCS?rc2i:(rc2i=0)] = TCNT1 >> 1;
 }
 
-/*
 ISR(INT4_vect) { //RC5
   rc5 = TCNT1 >> 1;
 } 
-*/
 
 ISR(INT5_vect) { //RC6
   rc6 = TCNT1 >> 1;
 }
-
-/*
-void initADC(void) {
-  ADMUX = (1 << REFS0);  //Set the reference to AVCC and channel 0
-  ADCSRA |= (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); //set timing to clk/128
-  ADCSRA |= (1 << ADIE) | (1 << ADEN); //enable adc and adc interrupt
-  ADCSRA |= (1 << ADSC); //start ADC conversion
-}
-
-ISR(ADC_vect) { //Adc read interrupt
-  batt = 0;
-  batt = ADCL;       //get the lower 8-bits
-  batt |= ADCH << 8;     //get the upper 2-bits
-  ADCSRA |= (1<<ADSC);      //start ADC conversion
-}
-*/
