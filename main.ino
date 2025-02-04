@@ -65,7 +65,7 @@ void setup() {
   initRC();
 }
 
-void loop() {
+void gatherRCData() {
   rc1 = 0; //average last 5 recordings of rc width
   rc2 = 0;
   for (uint8_t i = 0; i < RCS; i ++) {
@@ -75,7 +75,9 @@ void loop() {
   rc1 /= RCS;
   rc2 /= RCS;
   MAX_PWM = map(rc6, 990, 1985, PWM_LOWER, PWM_UPPER);
+}
 
+void computeMotorSpeed() {
   if ((rc1 < MIDDLE + DEADZONE) && (rc1 > MIDDLE - DEADZONE)) //implement dead zone for sticks
     sL = 0;
   else
@@ -88,7 +90,9 @@ void loop() {
   
   MAX_INC = MAX_ACC*TCNT5; //Calculate maximum change in pwm val
   TCNT5 = 0; //Reset loop timer
+}
 
+void updateMotorOutputs() {
   if (ABS(sL - oL) < MAX_INC) //max change in set point
     oL = sL;
   else 
@@ -125,13 +129,21 @@ void loop() {
     OCR4B = -oR;
     PORTH |= (1<<PH6); //Set right dir
   }  
+}
 
+void checkSwitch() {
   //read switch - rc5
   if (rc5 < 1250) //Top Position
     DDRA &= ~(1<<PA0); //Release Button - Shove Recieving
   else //Middle or Bottom Position
     DDRA |= (1<<PA0); //Press Button - Shove Transmitting
+}
 
+void loop() {
+  gatherRCData();
+  computeMotorSpeed();
+  updateMotorOutputs();
+  checkSwitch();
 }
 
 //setup PWM for motors - OC4A and OC4B using PWM mode 14 - freqency = ~244Hz
