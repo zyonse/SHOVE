@@ -1,9 +1,9 @@
 /*Alexander Wilkinson - SHOVE MCP
   INPUT PINS:
-     19 - RC 1 - INT2 - PD2
-     18 - RC 2 - INT3
-      2 - RC 5 - INT4
-      3 - RC 6 - INT5
+     19 - rcChannel1 - INT2 - PD2
+     18 - rcChannel2 - INT3
+      2 - rcSwitch   - INT4
+      3 - rcPot      - INT5
   OUTPUT PINS:
       6 - Left Motor Speed - OC4A - PH3
       8 - Left Motor Direction - PH5
@@ -20,27 +20,27 @@
       3 - Normal
       4 - Normal
   RC Channel Functions:
-      RC1  - Channels 1 and 2 in mixed mode
-      RC2       - Reads the state of x and y Right stick
-      RC5  - 3 state switch - 1000 high, 1500 middle, 2000 low
-      RC6  - pot - 990 left -> 1985 right
+      rcChannel1 - Channels 1 and 2 in mixed mode
+      rcChannel2 - Reads the state of x and y Right stick
+      rcSwitch   - 3 state switch - 1000 high, 1500 middle, 2000 low
+      rcPot      - pot - 990 left -> 1985 right
   **When controller disconnects after use it seems to output a neutral stick
       so no need to measure timeout
 */
-#define ABS(x) (x<0?-(x):x)
+#define ABS(x) (x < 0 ? -(x) : x)
 
 //RC Vars
-uint16_t rc1, rc2, rc5, rc6;
-#define RCS 5 //number of samples for averaging rc readings
-uint16_t rc1b[RCS], rc2b[RCS]; //rolling buffer for rc recordings
-uint8_t rc1i = 0, rc2i = 0; //buffer index
+uint16_t rcChannel1, rcChannel2, rcSwitch, rcPot;
+#define RC_SAMPLE_SIZE 5 //number of samples for averaging rc readings
+uint16_t rcChannel1Buffer[RC_SAMPLE_SIZE], rcChannel2Buffer[RC_SAMPLE_SIZE]; //rolling buffer for rc recordings
+uint8_t rcChannel1Index = 0, rcChannel2Index = 0; //buffer index
 void initRC();
-uint8_t ctrlConn; //is the controller connected
-#define MIDDLE 1490
-#define DEADZONE 50 //radius of the deadzone
+uint8_t controllerConnected; //is the controller connected
+#define RC_MIDDLE 1490
+#define RC_DEADZONE 50 //radius of the deadzone
 
-int16_t sL, sR; //set values from rc
-float oL, oR; //OUTPUT Values -1000 -> 1000 -- 0 is stop
+int16_t leftCommand, rightCommand; //set values from rc
+float leftOutput, rightOutput; //OUTPUT Values -1000 -> 1000 -- 0 is stop
 
 //Motor Right PWM on OC4B = PIN 7 //Motor Left PWM on OC4A = PIN6   
 void initMotors();    //Motor takes a PWM signal for magnitude       
@@ -50,13 +50,13 @@ void initMotors();    //Motor takes a PWM signal for magnitude
 int16_t MAX_PWM; //Max output pwm
 #define PWM_UPPER 800 //Range for max pwm output
 #define PWM_LOWER 100
-#define MAX_ACC 0.0028f //Max change in pwm per 4us
+#define MAX_ACCELERATION 0.0028f //Max change in pwm per 4us
 float MAX_INC; //Value for store max change for loop
 
 void setup() {  
   //Timer for loop timing
   TCCR5A = 0;           //normal port operations
-  TCCR5B = (1<<CS51) | (1<<CS50);   //clk/64 prescaler
+  TCCR5B = (1 << CS51) | (1 << CS50);   //clk/64 prescaler
 
   DDRA = 0x00; //Set up PORTA to be input with no pullup resistors
   PORTA = 0x00;
@@ -66,77 +66,77 @@ void setup() {
 }
 
 void gatherRCData() {
-  rc1 = 0; //average last 5 recordings of rc width
-  rc2 = 0;
-  for (uint8_t i = 0; i < RCS; i ++) {
-    rc1 += rc1b[i];
-    rc2 += rc2b[i]; 
+  rcChannel1 = 0; //average last 5 recordings of rc width
+  rcChannel2 = 0;
+  for (uint8_t i = 0; i < RC_SAMPLE_SIZE; i++) {
+    rcChannel1 += rcChannel1Buffer[i];
+    rcChannel2 += rcChannel2Buffer[i]; 
   }
-  rc1 /= RCS;
-  rc2 /= RCS;
-  MAX_PWM = map(rc6, 990, 1985, PWM_LOWER, PWM_UPPER);
+  rcChannel1 /= RC_SAMPLE_SIZE;
+  rcChannel2 /= RC_SAMPLE_SIZE;
+  MAX_PWM = map(rcPot, 990, 1985, PWM_LOWER, PWM_UPPER);
 }
 
 void computeMotorSpeed() {
-  if ((rc1 < MIDDLE + DEADZONE) && (rc1 > MIDDLE - DEADZONE)) //implement dead zone for sticks
-    sL = 0;
+  if ((rcChannel1 < RC_MIDDLE + RC_DEADZONE) && (rcChannel1 > RC_MIDDLE - RC_DEADZONE)) //implement dead zone for sticks
+    leftCommand = 0;
   else
-    sL = map(rc1, 2100, 900, -MAX_PWM, MAX_PWM); //Map incoming signals to set point PWM Values
+    leftCommand = map(rcChannel1, 2100, 900, -MAX_PWM, MAX_PWM); //Map incoming signals to set point PWM Values
 
-  if ((rc2 < MIDDLE + DEADZONE) && (rc2 > MIDDLE - DEADZONE))
-    sR = 0;
+  if ((rcChannel2 < RC_MIDDLE + RC_DEADZONE) && (rcChannel2 > RC_MIDDLE - RC_DEADZONE))
+    rightCommand = 0;
   else
-    sR = map(rc2, 2100, 900, -MAX_PWM, MAX_PWM);
+    rightCommand = map(rcChannel2, 2100, 900, -MAX_PWM, MAX_PWM);
   
-  MAX_INC = MAX_ACC*TCNT5; //Calculate maximum change in pwm val
+  MAX_INC = MAX_ACCELERATION * TCNT5; //Calculate maximum change in pwm val
   TCNT5 = 0; //Reset loop timer
 }
 
 void updateMotorOutputs() {
-  if (ABS(sL - oL) < MAX_INC) //max change in set point
-    oL = sL;
+  if (ABS(leftCommand - leftOutput) < MAX_INC) //max change in set point
+    leftOutput = leftCommand;
   else 
-    oL += (sL>oL ? MAX_INC : -MAX_INC);
+    leftOutput += (leftCommand > leftOutput ? MAX_INC : -MAX_INC);
     
-  if (ABS(sR - oR) < MAX_INC) //max change in set point
-    oR = sR;
+  if (ABS(rightCommand - rightOutput) < MAX_INC) //max change in set point
+    rightOutput = rightCommand;
   else 
-    oR += (sR>oR ? MAX_INC : -MAX_INC);
+    rightOutput += (rightCommand > rightOutput ? MAX_INC : -MAX_INC);
 
-  if (ABS(oL) > 1000)
-    oL = oL>0?1000:-1000;
-  if (ABS(oR) > 1000)
-    oR = oR>0?1000:-1000;
+  if (ABS(leftOutput) > 1000)
+    leftOutput = leftOutput > 0 ? 1000 : -1000;
+  if (ABS(rightOutput) > 1000)
+    rightOutput = rightOutput > 0 ? 1000 : -1000;
 
-  if (!ctrlConn) { //if controller not connected
-    oL = 0;
-    oR = 0;
+  if (!controllerConnected) { //if controller not connected
+    leftOutput = 0;
+    rightOutput = 0;
   }
     
-  if (oL >= 0) { //Set left motor speed and direction
-    OCR4A = oL;
-    PORTH &= ~(1<<PH5); //Clr left dir
+  if (leftOutput >= 0) { //Set left motor speed and direction
+    OCR4A = leftOutput;
+    PORTH &= ~(1 << PH5); //Clr left dir
   }
   else {
-    OCR4A = -oL;
-    PORTH |= (1<<PH5); //Set left dir
+    OCR4A = -leftOutput;
+    PORTH |= (1 << PH5); //Set left dir
   }
-  if (oR >= 0) { //set right motor speed and direction
-    OCR4B = oR;
-    PORTH &= ~(1<<PH6); //Clr right dir
+  if (rightOutput >= 0) { //set right motor speed and direction
+    OCR4B = rightOutput;
+    PORTH &= ~(1 << PH6); //Clr right dir
   }
   else {
-    OCR4B = -oR;
-    PORTH |= (1<<PH6); //Set right dir
+    OCR4B = -rightOutput;
+    PORTH |= (1 << PH6); //Set right dir
   }  
 }
 
 void checkSwitch() {
-  //read switch - rc5
-  if (rc5 < 1250) //Top Position
-    DDRA &= ~(1<<PA0); //Release Button - Shove Recieving
+  //read switch - rcSwitch
+  if (rcSwitch < 1250) //Top Position
+    DDRA &= ~(1 << PA0); //Release Button - Shove Recieving
   else //Middle or Bottom Position
-    DDRA |= (1<<PA0); //Press Button - Shove Transmitting
+    DDRA |= (1 << PA0); //Press Button - Shove Transmitting
 }
 
 void loop() {
@@ -148,11 +148,11 @@ void loop() {
 
 //setup PWM for motors - OC4A and OC4B using PWM mode 14 - freqency = ~244Hz
 void initMotors() {
-  DDRH |= (1<<PH3) | (1<<PH4) | (1<<PH5) | (1<<PH6);  //Turn on output pins
+  DDRH |= (1 << PH3) | (1 << PH4) | (1 << PH5) | (1 << PH6);  //Turn on output pins
   TCCR4A = 0; //reset registers
   TCCR4B = 0;
-  TCCR4A |= (1<<COM4A1) | (1<<COM4B1) | (1<<WGM41);
-  TCCR4B |= (1<<WGM43) | (1<<WGM42) | /*(1<<CS41) |*/ (1<<CS40); 
+  TCCR4A |= (1 << COM4A1) | (1 << COM4B1) | (1 << WGM41);
+  TCCR4B |= (1 << WGM43) | (1 << WGM42) | /*(1 << CS41) |*/ (1 << CS40); 
   ICR4 = 1000; //set max of 1000
   OCR4A = 0; //initialize 0% duty cycle
   OCR4B = 0;
@@ -160,36 +160,36 @@ void initMotors() {
 
 //Setup external interrupts
 void initRC() {
-  DDRD &= ~((1<<PD2) | (1<<PD3)); //INT 2 and 3 as input
-  DDRE &= ~((1<<PE4) | (1<<PE5)); //INT 4 and 5 as input
+  DDRD &= ~((1 << PD2) | (1 << PD3)); //INT 2 and 3 as input
+  DDRE &= ~((1 << PE4) | (1 << PE5)); //INT 4 and 5 as input
   //Initialize Timer for Reading - tick every 0.5us
   TCCR1A = 0;           //normal port operations
-  TCCR1B = (1<<CS11);   //clk/8 prescaler
+  TCCR1B = (1 << CS11);   //clk/8 prescaler
   //Initialize External Interrupts
-  EICRA = (1<<ISC20) | (1<<ISC31); //INT2 Any Edge, INT3 Falling Edge
-  EICRB = (1<<ISC41) | (1<<ISC51); //INT4 INT5 Falling Edge
-  EIMSK = (1<<INT2) | (1<<INT3) | (1<<INT4) | (1<<INT5); //Enable external interrupt pins
-  ctrlConn = 0; //Set RC as disconnected at start
+  EICRA = (1 << ISC20) | (1 << ISC31); //INT2 Any Edge, INT3 Falling Edge
+  EICRB = (1 << ISC41) | (1 << ISC51); //INT4 INT5 Falling Edge
+  EIMSK = (1 << INT2) | (1 << INT3) | (1 << INT4) | (1 << INT5); //Enable external interrupt pins
+  controllerConnected = 0; //Set RC as disconnected at start
   sei(); //Set interrupt bit
 }
 
-ISR(INT2_vect) { //RC1
-  if (PIND&(1<<PD2))
+ISR(INT2_vect) { // Interrupt for rcChannel1
+  if (PIND & (1 << PD2))
     TCNT1 = 0;
   else {
-    rc1b[++rc1i<RCS?rc1i:(rc1i=0)] = TCNT1 >> 1;
-    ctrlConn = 1;
+    rcChannel1Buffer[++rcChannel1Index < RC_SAMPLE_SIZE ? rcChannel1Index : (rcChannel1Index = 0)] = TCNT1 >> 1;
+    controllerConnected = 1;
   }
 }
 
-ISR(INT3_vect) { //RC2
-  rc2b[++rc2i<RCS?rc2i:(rc2i=0)] = TCNT1 >> 1;
+ISR(INT3_vect) { // Interrupt for rcChannel2
+  rcChannel2Buffer[++rcChannel2Index < RC_SAMPLE_SIZE ? rcChannel2Index : (rcChannel2Index = 0)] = TCNT1 >> 1;
 }
 
-ISR(INT4_vect) { //RC5
-  rc5 = TCNT1 >> 1;
+ISR(INT4_vect) { // Interrupt for rcSwitch
+  rcSwitch = TCNT1 >> 1;
 } 
 
-ISR(INT5_vect) { //RC6
-  rc6 = TCNT1 >> 1;
+ISR(INT5_vect) { // Interrupt for rcPot
+  rcPot = TCNT1 >> 1;
 }
