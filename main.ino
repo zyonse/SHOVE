@@ -78,35 +78,58 @@ void gatherRCData() {
 }
 
 void computeMotorSpeed() {
-  if ((rcChannel1 < RC_MIDDLE + RC_DEADZONE) && (rcChannel1 > RC_MIDDLE - RC_DEADZONE)) //implement dead zone for sticks
+  if ((rcChannel1 < RC_MIDDLE + RC_DEADZONE) && (rcChannel1 > RC_MIDDLE - RC_DEADZONE)) { //implement dead zone for sticks
     leftCommand = 0;
-  else
+  } else {
     leftCommand = map(rcChannel1, 2100, 900, -MAX_PWM, MAX_PWM); //Map incoming signals to set point PWM Values
+  }
 
-  if ((rcChannel2 < RC_MIDDLE + RC_DEADZONE) && (rcChannel2 > RC_MIDDLE - RC_DEADZONE))
+  if ((rcChannel2 < RC_MIDDLE + RC_DEADZONE) && (rcChannel2 > RC_MIDDLE - RC_DEADZONE)) {
     rightCommand = 0;
-  else
+  } else {
     rightCommand = map(rcChannel2, 2100, 900, -MAX_PWM, MAX_PWM);
+  }
   
   MAX_INC = MAX_ACCELERATION * TCNT5; //Calculate maximum change in pwm val
   TCNT5 = 0; //Reset loop timer
 }
 
 void updateMotorOutputs() {
-  if (ABS(leftCommand - leftOutput) < MAX_INC) //max change in set point
+  if (ABS(leftCommand - leftOutput) < MAX_INC) { //max change in set point
     leftOutput = leftCommand;
-  else 
-    leftOutput += (leftCommand > leftOutput ? MAX_INC : -MAX_INC);
+  } else {
+    if (leftCommand > leftOutput) {
+      leftOutput += MAX_INC;
+    } else {
+      leftOutput -= MAX_INC;
+    }
+  }
     
-  if (ABS(rightCommand - rightOutput) < MAX_INC) //max change in set point
+  if (ABS(rightCommand - rightOutput) < MAX_INC) { //max change in set point
     rightOutput = rightCommand;
-  else 
-    rightOutput += (rightCommand > rightOutput ? MAX_INC : -MAX_INC);
+  } else {
+    if (rightCommand > rightOutput) {
+      rightOutput += MAX_INC;
+    } else {
+      rightOutput -= MAX_INC;
+    }
+  }
 
-  if (ABS(leftOutput) > 1000)
-    leftOutput = leftOutput > 0 ? 1000 : -1000;
-  if (ABS(rightOutput) > 1000)
-    rightOutput = rightOutput > 0 ? 1000 : -1000;
+  if (ABS(leftOutput) > 1000) {
+    if (leftOutput > 0) {
+      leftOutput = 1000;
+    } else {
+      leftOutput = -1000;
+    }
+  }
+  
+  if (ABS(rightOutput) > 1000) {
+    if (rightOutput > 0) {
+      rightOutput = 1000;
+    } else {
+      rightOutput = -1000;
+    }
+  }
 
   if (!controllerConnected) { //if controller not connected
     leftOutput = 0;
@@ -133,10 +156,11 @@ void updateMotorOutputs() {
 
 void checkSwitch() {
   //read switch - rcSwitch
-  if (rcSwitch < 1250) //Top Position
+  if (rcSwitch < 1250) { //Top Position
     DDRA &= ~(1 << PA0); //Release Button - Shove Recieving
-  else //Middle or Bottom Position
+  } else { //Middle or Bottom Position
     DDRA |= (1 << PA0); //Press Button - Shove Transmitting
+  }
 }
 
 void loop() {
@@ -174,16 +198,24 @@ void initRC() {
 }
 
 ISR(INT2_vect) { // Interrupt for rcChannel1
-  if (PIND & (1 << PD2))
+  if (PIND & (1 << PD2)) {
     TCNT1 = 0;
-  else {
-    rcChannel1Buffer[++rcChannel1Index < RC_SAMPLE_SIZE ? rcChannel1Index : (rcChannel1Index = 0)] = TCNT1 >> 1;
+  } else {
+    rcChannel1Index++;
+    if (rcChannel1Index >= RC_SAMPLE_SIZE) {
+      rcChannel1Index = 0;
+    }
+    rcChannel1Buffer[rcChannel1Index] = TCNT1 >> 1;
     controllerConnected = 1;
   }
 }
 
 ISR(INT3_vect) { // Interrupt for rcChannel2
-  rcChannel2Buffer[++rcChannel2Index < RC_SAMPLE_SIZE ? rcChannel2Index : (rcChannel2Index = 0)] = TCNT1 >> 1;
+  rcChannel2Index++;
+  if (rcChannel2Index >= RC_SAMPLE_SIZE) {
+    rcChannel2Index = 0;
+  }
+  rcChannel2Buffer[rcChannel2Index] = TCNT1 >> 1;
 }
 
 ISR(INT4_vect) { // Interrupt for rcSwitch
